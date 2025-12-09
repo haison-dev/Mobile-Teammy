@@ -91,7 +91,8 @@ class GroupRemoteDataSource {
     String accessToken,
     String majorName,
   ) async {
-    final uri = Uri.parse('$baseUrl${ApiPath.skillsByMajor(majorName)}');
+    final encodedMajor = Uri.encodeComponent(majorName);
+    final uri = Uri.parse('$baseUrl/api/skills?major=$encodedMajor&pageSize=100');
 
     final response = await _httpClient.get(
       uri,
@@ -102,7 +103,7 @@ class GroupRemoteDataSource {
     );
 
     if (response.statusCode != 200) {
-      throw Exception('Failed to fetch skills');
+      throw Exception('Failed to fetch skills: ${response.statusCode}');
     }
 
     final decoded = jsonDecode(utf8.decode(response.bodyBytes)) as List<dynamic>;

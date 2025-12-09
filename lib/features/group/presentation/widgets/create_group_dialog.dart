@@ -34,6 +34,7 @@ class _CreateGroupDialogState extends State<CreateGroupDialog> {
   
   List<Skill> _allSkills = [];
   Set<String> _selectedSkillIds = {};
+  String? _selectedCategory; // null = All
   
   bool _loading = true;
   bool _submitting = false;
@@ -60,11 +61,12 @@ class _CreateGroupDialogState extends State<CreateGroupDialog> {
       setState(() {
         _allSkills = skills;
         _loading = false;
+        _error = null;
       });
     } catch (e) {
       if (!mounted) return;
       setState(() {
-        _error = 'Failed to load skills';
+        _error = e.toString();
         _loading = false;
       });
     }
@@ -73,14 +75,14 @@ class _CreateGroupDialogState extends State<CreateGroupDialog> {
   Future<void> _handleCreateGroup() async {
     if (_nameCtrl.text.trim().isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(_t('Vui long nhap ten nhom', 'Please enter group name'))),
+        SnackBar(content: Text(_t('Vui lòng nhập tên nhóm', 'Please enter group name'))),
       );
       return;
     }
 
     if (_selectedSkillIds.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(_t('Vui long chon it nhat 1 ky nang', 'Please select at least 1 skill'))),
+        SnackBar(content: Text(_t('Vui lòng chọn ít nhất 1 kỹ năng', 'Please select at least 1 skill'))),
       );
       return;
     }
@@ -111,7 +113,54 @@ class _CreateGroupDialogState extends State<CreateGroupDialog> {
   String _t(String vi, String en) =>
       widget.language == AppLanguage.vi ? vi : en;
 
-  @override
+  Color _getCategoryColor(String category) {
+    switch (category.toLowerCase()) {
+      case 'frontend':
+        return const Color(0xFF3A6FD8); // Blue
+      case 'backend':
+        return const Color(0xFFF59E0B); // Orange
+      case 'devops':
+        return const Color(0xFF10B981); // Green
+      case 'qa':
+        return const Color(0xFFEF4444); // Red
+      case 'mobile':
+        return const Color(0xFF8B5CF6); // Purple
+      default:
+        return const Color(0xFF6B7280); // Gray
+    }
+  }
+
+  Widget _buildCategoryButton(String label, String? category) {
+    final isSelected = _selectedCategory == category;
+    return GestureDetector(
+      onTap: () {
+        setState(() {
+          _selectedCategory = category;
+        });
+      },
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+        decoration: BoxDecoration(
+          color: isSelected ? _getCategoryColor(category ?? 'all') : Colors.white,
+          border: Border.all(
+            color: isSelected
+                ? _getCategoryColor(category ?? 'all')
+                : const Color(0xFFD0D5E1),
+          ),
+          borderRadius: BorderRadius.circular(6),
+        ),
+        child: Text(
+          label,
+          style: TextStyle(
+            fontSize: 11,
+            fontWeight: FontWeight.w600,
+            color: isSelected ? Colors.white : const Color(0xFF6B7280),
+          ),
+        ),
+      ),
+    );
+  }
+    @override
   void dispose() {
     _nameCtrl.dispose();
     _descCtrl.dispose();
@@ -221,37 +270,158 @@ class _CreateGroupDialogState extends State<CreateGroupDialog> {
                   color: Color(0xFF1C293F),
                 ),
               ),
-              const SizedBox(height: 8),
-              Wrap(
-                spacing: 8,
-                runSpacing: 8,
-                children: _allSkills.map((skill) {
-                  final isSelected = _selectedSkillIds.contains(skill.skillId);
-                  return FilterChip(
-                    label: Text(skill.skillName),
-                    selected: isSelected,
-                    onSelected: (selected) {
-                      setState(() {
-                        if (selected) {
-                          _selectedSkillIds.add(skill.skillId);
-                        } else {
-                          _selectedSkillIds.remove(skill.skillId);
-                        }
-                      });
-                    },
-                    backgroundColor: Colors.white,
-                    selectedColor: const Color(0xFF3A6FD8),
-                    labelStyle: TextStyle(
-                      color: isSelected ? Colors.white : const Color(0xFF6B7280),
-                      fontWeight: FontWeight.w500,
+              const SizedBox(height: 12),
+
+              // Selected Skills
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  border: Border.all(color: const Color(0xFFE5E7EB)),
+                  borderRadius: BorderRadius.circular(8),
+                  color: const Color(0xFFFAFBFC),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      _t('Da chon Ky Nang (0)', 'Selected Skills (${_selectedSkillIds.length})'),
+                      style: const TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600,
+                        color: Color(0xFF6B7280),
+                      ),
                     ),
-                    side: BorderSide(
-                      color: isSelected
-                          ? const Color(0xFF3A6FD8)
-                          : const Color(0xFFD0D5E1),
-                    ),
-                  );
-                }).toList(),
+                    const SizedBox(height: 8),
+                    if (_selectedSkillIds.isEmpty)
+                      Text(
+                        _t('Nhan vao cac ky nang duoi de them vao', 'Click skills below to add them'),
+                        style: const TextStyle(
+                          fontSize: 12,
+                          color: Color(0xFF9CA3AF),
+                        ),
+                      )
+                    else
+                      Wrap(
+                        spacing: 6,
+                        runSpacing: 6,
+                        children: _allSkills
+                            .where((s) => _selectedSkillIds.contains(s.skillId))
+                            .map((skill) => Chip(
+                              label: Text(skill.skillName),
+                              onDeleted: () {
+                                setState(() {
+                                  _selectedSkillIds.remove(skill.skillId);
+                                });
+                              },
+                              backgroundColor: _getCategoryColor(skill.category).withOpacity(0.2),
+                              labelStyle: TextStyle(
+                                color: _getCategoryColor(skill.category),
+                                fontWeight: FontWeight.w600,
+                                fontSize: 11,
+                              ),
+                            ))
+                            .toList(),
+                      ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 16),
+
+              // Category Tabs
+              SingleChildScrollView(
+                scrollDirection: Axis.horizontal,
+                child: Row(
+                  children: [
+                    _buildCategoryButton('All', null),
+                    const SizedBox(width: 8),
+                    _buildCategoryButton('Frontend', 'frontend'),
+                    const SizedBox(width: 8),
+                    _buildCategoryButton('Devops', 'devops'),
+                    const SizedBox(width: 8),
+                    _buildCategoryButton('Backend', 'backend'),
+                    const SizedBox(width: 8),
+                    _buildCategoryButton('QA', 'qa'),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 12),
+
+              // Available Skills
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  border: Border.all(color: const Color(0xFFE5E7EB)),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                constraints: const BoxConstraints(maxHeight: 200),
+                child: SingleChildScrollView(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        _t('Ky Nang Khong Dung (Nhan de them)', 'Available Skills (Click to add)'),
+                        style: const TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w600,
+                          color: Color(0xFF6B7280),
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                      Wrap(
+                        spacing: 6,
+                        runSpacing: 6,
+                        children: _allSkills
+                            .where((skill) => !_selectedSkillIds.contains(skill.skillId))
+                            .where((skill) {
+                              if (_selectedCategory == null) return true;
+                              return skill.category.toLowerCase() == _selectedCategory!.toLowerCase();
+                            })
+                            .toList()
+                            .map((skill) {
+                          return GestureDetector(
+                            onTap: () {
+                              setState(() {
+                                _selectedSkillIds.add(skill.skillId);
+                              });
+                            },
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                              decoration: BoxDecoration(
+                                color: _getCategoryColor(skill.category).withOpacity(0.15),
+                                borderRadius: BorderRadius.circular(6),
+                                border: Border.all(
+                                  color: _getCategoryColor(skill.category).withOpacity(0.3),
+                                ),
+                              ),
+                              child: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Text(
+                                    skill.skillName,
+                                    style: TextStyle(
+                                      fontSize: 11,
+                                      fontWeight: FontWeight.w600,
+                                      color: _getCategoryColor(skill.category),
+                                    ),
+                                  ),
+                                  const SizedBox(width: 4),
+                                  Text(
+                                    '+',
+                                    style: TextStyle(
+                                      fontSize: 12,
+                                      fontWeight: FontWeight.w700,
+                                      color: _getCategoryColor(skill.category),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          );
+                        }).toList(),
+                      ),
+                    ],
+                  ),
+                ),
               ),
               const SizedBox(height: 20),
 

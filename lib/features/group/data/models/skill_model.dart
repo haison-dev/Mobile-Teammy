@@ -9,9 +9,9 @@ class SkillModel extends Skill {
 
   factory SkillModel.fromJson(Map<String, dynamic> json) {
     return SkillModel(
-      skillId: json['skillId'] as String,
-      skillName: json['skillName'] as String,
-      category: json['category'] as String,
+      skillId: (json['skillId'] ?? json['token'] ?? '') as String,
+      skillName: (json['skillName'] ?? json['token'] ?? '') as String,
+      category: (json['category'] ?? json['role'] ?? '') as String,
     );
   }
 

@@ -29,6 +29,7 @@ class _GroupPageState extends State<GroupPage> {
   bool _loading = true;
   String? _error;
   Map<String, int?> _groupProgress = {};
+  int _selectedTabIndex = 0; // 0: Groups, 1: Invitations
 
   @override
   void initState() {
@@ -113,7 +114,7 @@ class _GroupPageState extends State<GroupPage> {
             const SizedBox(height: 16),
             ElevatedButton(
               onPressed: _loadGroups,
-              child: Text(_translate('Thu lai', 'Retry')),
+              child: Text(_translate('Thử lại', 'Retry')),
             ),
           ],
         ),
@@ -138,7 +139,7 @@ class _GroupPageState extends State<GroupPage> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      _translate('Nhom & Du An Cua Toi', 'My Groups & Projects'),
+                      _translate('Nhóm & Dự Án Của Tôi', 'My Groups & Projects'),
                       style: const TextStyle(
                         fontSize: 20,
                         fontWeight: FontWeight.w700,
@@ -148,7 +149,7 @@ class _GroupPageState extends State<GroupPage> {
                     const SizedBox(height: 8),
                     Text(
                       _translate(
-                        'Quan ly du an tap the, theo doi tien do, va cong tac voi cac dong doi. Tao nhom moi hoac tham gia nhom co san de xay dung nhung du an tuyet voi cung nhau.',
+                        'Quản lý dự án tập thể, theo dõi tiến độ, và cộng tác với các đồng đội. Tạo nhóm mới hoặc tham gia nhóm có sẵn để xây dựng những dự án tuyệt vời cùng nhau.',
                         'Manage your capstone project teams, track progress, and collaborate with teammates. Create new groups or join existing ones to build amazing projects together.',
                       ),
                       style: const TextStyle(
@@ -167,7 +168,7 @@ class _GroupPageState extends State<GroupPage> {
                             onPressed: _showCreateGroupDialog,
                             icon: const Icon(FeatherIcons.plus),
                             label: Text(
-                              _translate('Tao Nhom Moi', 'Create New Group'),
+                              _translate('Tạo Nhóm Mới', 'Create New Group'),
                               style: const TextStyle(fontSize: 13),
                             ),
                             style: ElevatedButton.styleFrom(
@@ -188,7 +189,7 @@ class _GroupPageState extends State<GroupPage> {
                                 SnackBar(
                                   content: Text(
                                     _translate(
-                                      'Tham gia nhom dang phat trien',
+                                      'Tham gia nhóm đang phát triển',
                                       'Join group feature coming soon',
                                     ),
                                   ),
@@ -197,7 +198,7 @@ class _GroupPageState extends State<GroupPage> {
                             },
                             icon: const Icon(FeatherIcons.userPlus),
                             label: Text(
-                              _translate('Tham Gia Nhom', 'Join Group'),
+                              _translate('Tham Gia Nhóm', 'Join Group'),
                               style: const TextStyle(fontSize: 13),
                             ),
                             style: ElevatedButton.styleFrom(
@@ -215,6 +216,7 @@ class _GroupPageState extends State<GroupPage> {
                     const SizedBox(height: 16),
                     // Stats
                     Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
                       children: [
                         Icon(
                           FeatherIcons.users,
@@ -223,13 +225,13 @@ class _GroupPageState extends State<GroupPage> {
                         ),
                         const SizedBox(width: 6),
                         Text(
-                          '${_groups.length} ${_translate('nhom dang hoat dong', 'active groups')}',
+                          '${_groups.length} ${_translate('nhóm đang hoạt động', 'active groups')}',
                           style: const TextStyle(
                             fontSize: 12,
                             color: Color(0xFF6B7280),
                           ),
                         ),
-                        const SizedBox(width: 16),
+                        const SizedBox(width: 60),
                         Icon(
                           FeatherIcons.inbox,
                           size: 18,
@@ -237,7 +239,7 @@ class _GroupPageState extends State<GroupPage> {
                         ),
                         const SizedBox(width: 6),
                         Text(
-                          '0 ${_translate('don xin vao dang cho', 'pending applications')}',
+                          '0 ${_translate('đơn xin vào đang chờ', 'pending applications')}',
                           style: const TextStyle(
                             fontSize: 12,
                             color: Color(0xFF6B7280),
@@ -249,58 +251,152 @@ class _GroupPageState extends State<GroupPage> {
                 ),
               ),
             ),
-            collapsedHeight: 280,
-            expandedHeight: 280,
+            collapsedHeight: 180,
+            expandedHeight: 180,
           ),
 
-          // Content
-          if (_groups.isEmpty)
+          // Tabs Section
+          SliverToBoxAdapter(
+            child: Container(
+              color: Colors.white,
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: GestureDetector(
+                      onTap: () {
+                        setState(() {
+                          _selectedTabIndex = 0;
+                        });
+                      },
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(vertical: 10),
+                        decoration: BoxDecoration(
+                          border: Border(
+                            bottom: BorderSide(
+                              color: _selectedTabIndex == 0
+                                  ? const Color(0xFF3A6FD8)
+                                  : Colors.transparent,
+                              width: 2,
+                            ),
+                          ),
+                        ),
+                        child: Text(
+                          _translate('Nhóm', 'Groups'),
+                          style: TextStyle(
+                            fontSize: 14,
+                            fontWeight: FontWeight.w600,
+                            color: _selectedTabIndex == 0
+                                ? const Color(0xFF3A6FD8)
+                                : const Color(0xFF6B7280),
+                          ),
+                          textAlign: TextAlign.center,
+                        ),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 16),
+                  Expanded(
+                    child: GestureDetector(
+                      onTap: () {
+                        setState(() {
+                          _selectedTabIndex = 1;
+                        });
+                      },
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(vertical: 10),
+                        decoration: BoxDecoration(
+                          border: Border(
+                            bottom: BorderSide(
+                              color: _selectedTabIndex == 1
+                                  ? const Color(0xFF3A6FD8)
+                                  : Colors.transparent,
+                              width: 2,
+                            ),
+                          ),
+                        ),
+                        child: Text(
+                          _translate('Lời Mời', 'Invitations'),
+                          style: TextStyle(
+                            fontSize: 14,
+                            fontWeight: FontWeight.w600,
+                            color: _selectedTabIndex == 1
+                                ? const Color(0xFF3A6FD8)
+                                : const Color(0xFF6B7280),
+                          ),
+                          textAlign: TextAlign.center,
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+
+          // Content based on selected tab
+          if (_selectedTabIndex == 0)
+            // Groups tab
+            if (_groups.isEmpty)
+              SliverFillRemaining(
+                child: Center(
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Icon(
+                        FeatherIcons.users,
+                        size: 64,
+                        color: Colors.grey[400],
+                      ),
+                      const SizedBox(height: 16),
+                      Text(
+                        _translate('Chưa có nhóm nào', 'No groups yet'),
+                        style: const TextStyle(
+                          fontSize: 16,
+                          color: Colors.grey,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              )
+            else
+              SliverPadding(
+                padding: const EdgeInsets.all(16),
+                sliver: SliverList(
+                  delegate: SliverChildBuilderDelegate(
+                    (context, index) {
+                      final group = _groups[index];
+                      final progress = _groupProgress[group.id] ?? 0;
+                      return Padding(
+                        padding: const EdgeInsets.only(bottom: 12),
+                        child: _GroupCard(
+                          group: group,
+                          progress: progress,
+                          language: widget.language,
+                          onViewTap: () {
+                            // TODO: Navigate to group detail
+                          },
+                          onLeaveGroupTap: () {
+                            // TODO: Leave group
+                          },
+                        ),
+                      );
+                    },
+                    childCount: _groups.length,
+                  ),
+                ),
+              )
+          else
+            // Invitations tab - empty for now
             SliverFillRemaining(
               child: Center(
-                child: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    Icon(
-                      FeatherIcons.users,
-                      size: 64,
-                      color: Colors.grey[400],
-                    ),
-                    const SizedBox(height: 16),
-                    Text(
-                      _translate('Chua co nhom nao', 'No groups yet'),
-                      style: const TextStyle(
-                        fontSize: 16,
-                        color: Colors.grey,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            )
-          else
-            SliverPadding(
-              padding: const EdgeInsets.all(16),
-              sliver: SliverList(
-                delegate: SliverChildBuilderDelegate(
-                  (context, index) {
-                    final group = _groups[index];
-                    final progress = _groupProgress[group.id] ?? 0;
-                    return Padding(
-                      padding: const EdgeInsets.only(bottom: 12),
-                      child: _GroupCard(
-                        group: group,
-                        progress: progress,
-                        language: widget.language,
-                        onViewTap: () {
-                          // TODO: Navigate to group detail
-                        },
-                        onLeaveGroupTap: () {
-                          // TODO: Leave group
-                        },
-                      ),
-                    );
-                  },
-                  childCount: _groups.length,
+                child: Text(
+                  _translate('Chưa có lời mời nào', 'No invitations yet'),
+                  style: const TextStyle(
+                    fontSize: 16,
+                    color: Colors.grey,
+                  ),
                 ),
               ),
             ),
@@ -358,7 +454,7 @@ class _GroupCard extends StatelessWidget {
                       Row(
                         children: [
                           Text(
-                            '👥 ${group.name}',
+                            group.name,
                             style: const TextStyle(
                               fontSize: 18,
                               fontWeight: FontWeight.w700,
@@ -396,7 +492,7 @@ class _GroupCard extends StatelessWidget {
                 ),
                 Container(
                   padding:
-                      const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                      const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
                   decoration: BoxDecoration(
                     color: const Color(0xFF3A6FD8).withOpacity(0.12),
                     borderRadius: BorderRadius.circular(20),
@@ -404,13 +500,24 @@ class _GroupCard extends StatelessWidget {
                       color: const Color(0xFF3A6FD8).withOpacity(0.3),
                     ),
                   ),
-                  child: Text(
-                    _formatRole(group.role),
-                    style: const TextStyle(
-                      fontSize: 11,
-                      fontWeight: FontWeight.w600,
-                      color: Color(0xFF3A6FD8),
-                    ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(
+                        _getRoleIcon(group.role),
+                        size: 12,
+                        color: const Color(0xFF3A6FD8),
+                      ),
+                      const SizedBox(width: 4),
+                      Text(
+                        _formatRole(group.role),
+                        style: const TextStyle(
+                          fontSize: 11,
+                          fontWeight: FontWeight.w600,
+                          color: Color(0xFF3A6FD8),
+                        ),
+                      ),
+                    ],
                   ),
                 ),
               ],
@@ -579,7 +686,7 @@ class _GroupCard extends StatelessWidget {
           ),
           // Footer with action buttons
           Padding(
-            padding: const EdgeInsets.all(16),
+            padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
             child: Row(
               children: [
                 Expanded(
@@ -606,33 +713,52 @@ class _GroupCard extends StatelessWidget {
               ],
             ),
           ),
-          // Leave group link
+          // Leave group button
           Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16),
-            child: GestureDetector(
-              onTap: onLeaveGroupTap,
-              child: Text(
-                _translate('Rời khỏi nhóm', 'Leave Group'),
-                style: const TextStyle(
-                  fontSize: 12,
-                  color: Color(0xFFEF4444),
-                  fontWeight: FontWeight.w500,
-                  decoration: TextDecoration.underline,
+            padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+            child: Row(
+              children: [
+                Expanded(
+                  child: ElevatedButton(
+                    onPressed: onLeaveGroupTap,
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: const Color(0xFFEF4444),
+                      foregroundColor: Colors.white,
+                      elevation: 0,
+                      padding: const EdgeInsets.symmetric(vertical: 10),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                    ),
+                    child: Text(
+                      _translate('Rời khỏi nhóm', 'Leave Group'),
+                      style: const TextStyle(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ),
                 ),
-              ),
+              ],
             ),
           ),
-          const SizedBox(height: 12),
         ],
       ),
     );
   }
 
   String _formatRole(String role) {
-    if (role == 'leader') return _translate('👨‍💼 Trưởng nhóm', '👨‍💼 Team Leader');
-    if (role == 'member') return _translate('👤 Thành viên', '👤 Member');
-    if (role == 'mentor') return _translate('🎓 Cố vấn', '🎓 Mentor');
+    if (role == 'leader') return _translate('Trưởng nhóm', 'Team Leader');
+    if (role == 'member') return _translate('Thành viên', 'Member');
+    if (role == 'mentor') return _translate('Cố vấn', 'Mentor');
     return role;
+  }
+
+  IconData _getRoleIcon(String role) {
+    if (role == 'leader') return FeatherIcons.award;
+    if (role == 'member') return FeatherIcons.user;
+    if (role == 'mentor') return FeatherIcons.star;
+    return FeatherIcons.user;
   }
 
   String _formatStatus(String status) {
