@@ -43,15 +43,19 @@ class _MainPageState extends State<MainPage> {
   final _tabs = const [
     _BottomTab(
       icon: Icons.view_kanban_outlined,
-      labelVi: 'Nhom',
+      labelVi: 'Nhóm',
       labelEn: 'Team',
     ),
     _BottomTab(
       icon: Icons.check_box_outlined,
-      labelVi: 'Viec cua toi',
-      labelEn: 'My Tasks',
+      labelVi: 'Bảng Kanban',
+      labelEn: 'Kanban Board',
     ),
-    _BottomTab(icon: Icons.forum_outlined, labelVi: 'Forum', labelEn: 'Forum'),
+    _BottomTab(
+      icon: Icons.forum_outlined,
+      labelVi: 'Diễn đàn',
+      labelEn: 'Forum',
+    ),
     _BottomTab(
       icon: Icons.chat_bubble_outline_rounded,
       labelVi: 'WorkChat',
@@ -167,7 +171,7 @@ class _MainPageState extends State<MainPage> {
   String _getTabTitle() {
     switch (_selectedIndex) {
       case 1:
-        return _translate('Công việc', 'My Tasks');
+        return _translate('Bảng Kanban', 'Kanban Board');
       case 2:
         return _translate('Forum', 'Forum');
       case 3:
@@ -182,7 +186,7 @@ class _MainPageState extends State<MainPage> {
       case 3:
         return ChatPage(session: widget.session, language: _language);
       case 1:
-        return TasksPage(language: _language);
+        return TasksPage(language: _language, session: widget.session);
       case 2:
         return ForumPage(session: widget.session, language: _language);
       default:
@@ -302,7 +306,7 @@ class _AppBar extends StatelessWidget {
         ? profile!.displayName[0]
         : 'T';
     return Container(
-      padding: const EdgeInsets.only(top: 16, left: 16, right: 16),
+      padding: const EdgeInsets.only(top: 16, left: 16, right: 16, bottom: 12),
       decoration: const BoxDecoration(
         color: Colors.white,
         boxShadow: [
