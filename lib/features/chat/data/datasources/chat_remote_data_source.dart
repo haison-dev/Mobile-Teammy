@@ -17,6 +17,7 @@ class ChatRemoteDataSource {
   Future<List<ChatConversationModel>> fetchConversations(
     String accessToken,
   ) async {
+    // Fetch DM conversations
     final uri = Uri.parse('$baseUrl${ApiPath.chatConversations}');
     final response = await _httpClient.get(
       uri,
@@ -36,12 +37,85 @@ class ChatRemoteDataSource {
     final decoded =
         jsonDecode(utf8.decode(response.bodyBytes)) as List<dynamic>;
 
-    return decoded
+    final conversations = decoded
         .whereType<Map<String, dynamic>>()
-        .map(ChatConversationModel.fromJson)
+        .map((json) => ChatConversationModel.fromJson(json))
         .toList();
+    final groupConversations = await _fetchGroupConversations(accessToken);
+    
+    return [...conversations, ...groupConversations];
   }
 
+  Future<ChatConversationModel> createDirectConversation({
+    required String accessToken,
+    required String otherUserId,
+  }) async {
+    final uri = Uri.parse('$baseUrl${ApiPath.chatConversations}');
+    final response = await _httpClient.post(
+      uri,
+      headers: {
+        'Authorization': 'Bearer $accessToken',
+        'Content-Type': 'application/json',
+        'accept': 'application/json',
+      },
+      body: jsonEncode(<String, dynamic>{'userId': otherUserId}),
+    );
+
+    if (response.statusCode < 200 || response.statusCode >= 300) {
+      throw AuthApiException(
+        statusCode: response.statusCode,
+        body: response.body,
+      );
+    }
+
+    final decoded = jsonDecode(utf8.decode(response.bodyBytes));
+    if (decoded is Map<String, dynamic>) {
+      final data = decoded['data'];
+      if (data is Map<String, dynamic>) {
+        return ChatConversationModel.fromJson(data);
+      }
+      return ChatConversationModel.fromJson(decoded);
+    }
+    if (decoded is List && decoded.isNotEmpty && decoded.first is Map) {
+      return ChatConversationModel.fromJson(
+        Map<String, dynamic>.from(decoded.first as Map),
+      );
+    }
+
+    throw AuthApiException(
+      statusCode: response.statusCode,
+      body: response.body,
+    );
+  }
+
+  Future<List<ChatConversationModel>> _fetchGroupConversations(
+    String accessToken,
+  ) async {
+    try {
+      final uri = Uri.parse('$baseUrl${ApiPath.groupsMyGroups}');
+      final response = await _httpClient.get(
+        uri,
+        headers: {
+          'Authorization': 'Bearer $accessToken',
+          'accept': 'application/json',
+        },
+      );
+
+      if (response.statusCode != 200) {
+        return [];
+      }
+
+      final decoded =
+          jsonDecode(utf8.decode(response.bodyBytes)) as List<dynamic>;
+
+      return decoded
+          .whereType<Map<String, dynamic>>()
+          .map((json) => ChatConversationModel.fromGroupJson(json))
+          .toList();
+    } catch (e) {
+      return [];
+    }
+  }
   Future<List<ChatMessageModel>> fetchSessionMessages({
     required String accessToken,
     required String sessionId,
@@ -122,7 +196,6 @@ class ChatRemoteDataSource {
         )
         .toList();
   }
-
   Future<void> sendMessage({
     required String accessToken,
     required String sessionId,
@@ -146,5 +219,32 @@ class ChatRemoteDataSource {
         body: response.body,
       );
     }
+  }
+
+  Future<List<Map<String, dynamic>>> fetchGroupMembers({
+    required String accessToken,
+    required String groupId,
+  }) async {
+    final uri = Uri.parse('$baseUrl${ApiPath.groupMembers(groupId)}');
+    final response = await _httpClient.get(
+      uri,
+      headers: {
+        'Authorization': 'Bearer $accessToken',
+        'accept': 'application/json',
+      },
+    );
+
+    if (response.statusCode != 200) {
+      throw AuthApiException(
+        statusCode: response.statusCode,
+        body: response.body,
+      );
+    }
+
+    final decoded =
+        jsonDecode(utf8.decode(response.bodyBytes)) as List<dynamic>;
+    return decoded
+        .whereType<Map<String, dynamic>>()
+        .toList();
   }
 }

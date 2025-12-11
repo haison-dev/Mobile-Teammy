@@ -17,10 +17,7 @@ abstract class GroupRepository {
   Future<List<Major>> fetchMajors(String accessToken);
 
   /// Lấy danh sách skills theo major
-  Future<List<Skill>> fetchSkillsByMajor(
-    String accessToken,
-    String majorName,
-  );
+  Future<List<Skill>> fetchSkillsByMajor(String accessToken, String majorName);
 
   /// Lấy danh sách thành viên của nhóm
   Future<List<GroupMember>> fetchGroupMembers(

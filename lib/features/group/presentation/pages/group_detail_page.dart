@@ -4,10 +4,13 @@ import 'package:flutter/material.dart';
 import '../../../../core/constants/api_constants.dart';
 import '../../../../core/localization/app_language.dart';
 import '../../../auth/domain/entities/auth_session.dart';
+import '../../../auth/presentation/pages/user_profile_page.dart';
 import '../../data/datasources/group_remote_data_source.dart';
+import '../../data/datasources/topic_remote_data_source.dart';
 import '../../domain/entities/group.dart';
 import '../../domain/entities/group_member.dart';
 import '../controllers/group_detail_controller.dart';
+import 'topic_selection_page.dart';
 import '../widgets/skill_tag.dart';
 
 class GroupDetailPage extends StatefulWidget {
@@ -124,7 +127,7 @@ class _GroupDetailPageState extends State<GroupDetailPage> {
             ? [
                 IconButton(
                   icon: const Icon(FeatherIcons.edit),
-                  onPressed: () => _showEditSnackbar(),
+                  onPressed: () => _showEditGroup(),
                 ),
               ]
             : null,
@@ -138,17 +141,19 @@ class _GroupDetailPageState extends State<GroupDetailPage> {
             const SizedBox(height: 20),
             _GroupInfoGrid(group: group, progress: _controller.groupProgress, language: widget.language),
             const SizedBox(height: 20),
-            _MentorSection(group: group, language: widget.language),
+            _MentorSection(group: group, language: widget.language, session: widget.session),
             const SizedBox(height: 20),
-            _TopicSection(group: group, isLeader: isLeader, language: widget.language),
+            _TopicSection(group: group, isLeader: isLeader, language: widget.language, session: widget.session, onSelectTopic: () => _loadAndShowTopics(context)),
             const SizedBox(height: 20),
             _TechnologiesSection(group: group, language: widget.language),
             const SizedBox(height: 20),
             _TeamMembersSection(
+              parentContext: context,
               group: group,
               members: _controller.members,
               isLeader: isLeader,
               language: widget.language,
+              session: widget.session,
               onInvite: _showInviteMembersDialog,
             ),
           ],
@@ -157,9 +162,58 @@ class _GroupDetailPageState extends State<GroupDetailPage> {
     );
   }
 
-  void _showEditSnackbar() {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(_translate('Chế độ chỉnh sửa đang phát triển', 'Edit mode coming soon'))),
+  Future<void> _loadAndShowTopics(BuildContext context) async {
+    try {
+      final topicDataSource = TopicRemoteDataSource(baseUrl: kApiBaseUrl);
+      final topicModels = await topicDataSource.fetchTopics(widget.session.accessToken);
+      
+      if (!context.mounted) return;
+
+      final topics = topicModels.map((model) => model.toEntity()).toList();
+
+      // Get mentor user ID from group mentor or session
+      final group = _controller.group;
+      final mentorUserId = group?.mentor?.userId ?? widget.session.userId;
+
+      Navigator.of(context).push(
+        MaterialPageRoute(
+          builder: (context) => TopicSelectionPage(
+            topics: topics,
+            selectedTopic: group?.topic,
+            language: widget.language,
+            groupId: group?.id,
+            accessToken: widget.session.accessToken,
+            mentorUserId: mentorUserId,
+            group: group,
+          ),
+        ),
+      );
+    } catch (e) {
+      if (!context.mounted) return;
+      
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            _translate(
+              'Lỗi tải danh sách chủ đề: $e',
+              'Error loading topics: $e',
+            ),
+          ),
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
+  }
+
+  void _showEditGroup() {
+    showDialog(
+      context: context,
+      builder: (_) => _EditGroupDialog(
+        group: _controller.group!,
+        session: widget.session,
+        language: widget.language,
+        onGroupUpdated: () => _controller.loadGroupDetail(),
+      ),
     );
   }
 }
@@ -192,9 +246,9 @@ class _GroupHeader extends StatelessWidget {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(group.name, style: const TextStyle(fontSize: 22, fontWeight: FontWeight.w700, color: Color(0xFF1C293F))),
+                    Text(group.name, style: const TextStyle(fontSize: 22, fontWeight: FontWeight.w700, color: Color(0xFF212631))),
                     const SizedBox(height: 6),
-                    Text(group.major.majorName, style: const TextStyle(fontSize: 14, color: Color(0xFF6B7280), fontWeight: FontWeight.w500)),
+                    Text(group.major.majorName, style: const TextStyle(fontSize: 14, color: Color(0xFF747A8A), fontWeight: FontWeight.w500)),
                   ],
                 ),
               ),
@@ -203,7 +257,7 @@ class _GroupHeader extends StatelessWidget {
           ),
           if (group.description != null && group.description!.isNotEmpty) ...[
             const SizedBox(height: 12),
-            Text(group.description!, style: const TextStyle(fontSize: 14, color: Color(0xFF6B7280))),
+            Text(group.description!, style: const TextStyle(fontSize: 14, color: Color(0xFF747A8A))),
           ],
         ],
       ),
@@ -214,16 +268,16 @@ class _GroupHeader extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
       decoration: BoxDecoration(
-        color: const Color(0xFF3A6FD8).withOpacity(0.12),
+        color: const Color(0xFF3B5FE5).withOpacity(0.12),
         borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: const Color(0xFF3A6FD8).withOpacity(0.3)),
+        border: Border.all(color: const Color(0xFF3B5FE5).withOpacity(0.3)),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(_getRoleIcon(), size: 14, color: const Color(0xFF3A6FD8)),
-          const SizedBox(width: 6),
-          Text(_formatRole(), style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: Color(0xFF3A6FD8))),
+          Icon(_getRoleIcon(), size: 14, color: const Color(0xFF3B5FE5)),
+          const SizedBox(width: 4),
+          Text(_formatRole(), style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: Color(0xFF3B5FE5))),
         ],
       ),
     );
@@ -256,71 +310,93 @@ class _GroupInfoGrid extends StatelessWidget {
   Widget build(BuildContext context) {
     return Column(
       children: [
-        Row(
-          children: [
-            Expanded(child: _buildInfoCard(FeatherIcons.calendar, _translate('Kỳ học', 'Semester'), '${group.semester.season} ${group.semester.year}')),
-            const SizedBox(width: 12),
-            Expanded(child: _buildInfoCard(FeatherIcons.activity, _translate('Trạng thái', 'Status'), _formatStatus())),
-          ],
-        ),
-        const SizedBox(height: 12),
-        _buildProgressCard(),
+        _buildInfoSection(),
+        const SizedBox(height: 16),
+        _buildProgressSection(),
       ],
     );
   }
 
-  Widget _buildInfoCard(IconData icon, String label, String value) {
+  Widget _buildInfoSection() {
     return Container(
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(12),
-        boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.08), blurRadius: 8, offset: const Offset(0, 2))],
+        border: Border.all(color: const Color(0xFFE2E4E9)),
+        boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.04), blurRadius: 4, offset: const Offset(0, 1))],
       ),
-      padding: const EdgeInsets.all(12),
+      padding: const EdgeInsets.all(16),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
+          Text(_translate('Thông tin nhóm', 'Group Info'), style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600, color: Color(0xFF212631))),
+          const SizedBox(height: 12),
           Row(
             children: [
-              Icon(icon, size: 16, color: const Color(0xFF3A6FD8)),
-              const SizedBox(width: 6),
-              Text(label, style: const TextStyle(fontSize: 11, color: Color(0xFF6B7280), fontWeight: FontWeight.w500)),
+              Expanded(child: _buildInfoCard(FeatherIcons.calendar, _translate('Kỳ học', 'Semester'), '${group.semester.season} ${group.semester.year}')),
+              const SizedBox(width: 12),
+              Expanded(child: _buildInfoCard(FeatherIcons.activity, _translate('Trạng thái', 'Status'), _formatStatus())),
             ],
           ),
-          const SizedBox(height: 8),
-          Text(value, style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: Color(0xFF1C293F)), maxLines: 2, overflow: TextOverflow.ellipsis),
         ],
       ),
     );
   }
 
-  Widget _buildProgressCard() {
+  Widget _buildInfoCard(IconData icon, String label, String value) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            Icon(icon, size: 16, color: const Color(0xFF3B5FE5)),
+            const SizedBox(width: 6),
+            Text(label, style: const TextStyle(fontSize: 11, color: Color(0xFF747A8A), fontWeight: FontWeight.w500)),
+          ],
+        ),
+        const SizedBox(height: 8),
+        Text(value, style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: Color(0xFF212631)), maxLines: 2, overflow: TextOverflow.ellipsis),
+      ],
+    );
+  }
+
+  Widget _buildProgressSection() {
     return Container(
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(12),
-        boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.08), blurRadius: 8, offset: const Offset(0, 2))],
+        border: Border.all(color: const Color(0xFFE2E4E9)),
+        boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.04), blurRadius: 4, offset: const Offset(0, 1))],
       ),
       padding: const EdgeInsets.all(16),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              Text(_translate('Tiến độ dự án', 'Project Progress'), style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: Color(0xFF1C293F))),
-              Text('$progress%', style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700, color: Color(0xFF3A6FD8))),
+              Icon(FeatherIcons.trendingUp, size: 18, color: const Color(0xFF3B5FE5)),
+              const SizedBox(width: 8),
+              Text(_translate('Tiến độ dự án', 'Project Progress'), style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600, color: Color(0xFF212631))),
             ],
           ),
           const SizedBox(height: 12),
-          ClipRRect(
-            borderRadius: BorderRadius.circular(8),
-            child: LinearProgressIndicator(
-              value: progress / 100,
-              minHeight: 8,
-              backgroundColor: const Color(0xFFE5E7EB),
-              valueColor: AlwaysStoppedAnimation<Color>(_getProgressColor()),
-            ),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Expanded(
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(8),
+                  child: LinearProgressIndicator(
+                    value: progress / 100,
+                    minHeight: 8,
+                    backgroundColor: const Color(0xFFE5E7EB),
+                    valueColor: AlwaysStoppedAnimation<Color>(_getProgressColor()),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 12),
+              Text('$progress%', style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700, color: Color(0xFF3B5FE5))),
+            ],
           ),
         ],
       ),
@@ -345,63 +421,79 @@ class _GroupInfoGrid extends StatelessWidget {
 class _MentorSection extends StatelessWidget {
   final Group group;
   final AppLanguage language;
+  final AuthSession session;
 
-  const _MentorSection({required this.group, required this.language});
+  const _MentorSection({required this.group, required this.language, required this.session});
 
   String _translate(String vi, String en) => language == AppLanguage.vi ? vi : en;
 
   @override
   Widget build(BuildContext context) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(_translate('Cố vấn', 'Mentor'), style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600, color: Color(0xFF1C293F))),
-        const SizedBox(height: 12),
-        group.mentor != null ? _buildMentorCard() : _buildEmptyState(),
-      ],
-    );
-  }
-
-  Widget _buildMentorCard() {
-    final mentor = group.mentor!;
     return Container(
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(12),
-        boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.08), blurRadius: 8, offset: const Offset(0, 2))],
+        border: Border.all(color: const Color(0xFFE2E4E9)),
+        boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.04), blurRadius: 4, offset: const Offset(0, 1))],
       ),
-      padding: const EdgeInsets.all(12),
-      child: Row(
+      padding: const EdgeInsets.all(16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          _buildAvatar(mentor.displayName, mentor.avatarUrl),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(mentor.displayName, style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: Color(0xFF1C293F))),
-                const SizedBox(height: 4),
-                Text(mentor.email, style: const TextStyle(fontSize: 12, color: Color(0xFF6B7280)), maxLines: 1, overflow: TextOverflow.ellipsis),
-              ],
-            ),
+          Row(
+            children: [
+              Icon(FeatherIcons.briefcase, size: 18, color: const Color(0xFF212631)),
+              const SizedBox(width: 8),
+              Text(_translate('Cố vấn', 'Mentor'), style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: Color(0xFF212631))),
+            ],
           ),
-          Icon(FeatherIcons.star, size: 18, color: const Color(0xFF8B5CF6)),
+          const SizedBox(height: 12),
+          group.mentor != null ? _buildMentorContent(context) : _buildEmptyContent(),
         ],
       ),
     );
   }
 
-  Widget _buildEmptyState() {
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(12),
-        boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.08), blurRadius: 8, offset: const Offset(0, 2))],
+  Widget _buildMentorContent(BuildContext context) {
+    final mentor = group.mentor!;
+    return InkWell(
+      onTap: () {
+        Navigator.of(context).push(
+          MaterialPageRoute(
+            builder: (context) => UserProfilePage(
+              userId: mentor.userId,
+              session: session,
+              language: language,
+            ),
+          ),
+        );
+      },
+      borderRadius: BorderRadius.circular(8),
+      child: Padding(
+        padding: const EdgeInsets.all(4),
+        child: Row(
+          children: [
+            _buildAvatar(mentor.displayName, mentor.avatarUrl),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(mentor.displayName, style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: Color(0xFF212631))),
+                  const SizedBox(height: 4),
+                  Text(mentor.email, style: const TextStyle(fontSize: 12, color: Color(0xFF747A8A)), maxLines: 1, overflow: TextOverflow.ellipsis),
+                ],
+              ),
+            ),
+            Icon(FeatherIcons.star, size: 18, color: const Color(0xFF8B5CF6)),
+          ],
+        ),
       ),
-      child: Text(_translate('Chưa có cố vấn', 'No mentor assigned'), style: const TextStyle(fontSize: 14, color: Color(0xFF6B7280))),
     );
+  }
+
+  Widget _buildEmptyContent() {
+    return Text(_translate('Chưa có cố vấn', 'No mentor assigned'), style: const TextStyle(fontSize: 14, color: Color(0xFF747A8A)));
   }
 
   Widget _buildAvatar(String name, String? url) {
@@ -427,59 +519,95 @@ class _TopicSection extends StatelessWidget {
   final Group group;
   final bool isLeader;
   final AppLanguage language;
+  final AuthSession session;
+  final VoidCallback? onSelectTopic;
 
-  const _TopicSection({required this.group, required this.isLeader, required this.language});
+  const _TopicSection({required this.group, required this.isLeader, required this.language, required this.session, this.onSelectTopic});
 
   String _translate(String vi, String en) => language == AppLanguage.vi ? vi : en;
 
   @override
   Widget build(BuildContext context) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(_translate('Chủ đề dự án', 'Project Topic'), style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600, color: Color(0xFF1C293F))),
-        const SizedBox(height: 12),
-        GestureDetector(
-          onTap: isLeader ? () => _showTopicSnackbar(context) : null,
-          child: Container(
-            decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(12),
-              boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.08), blurRadius: 8, offset: const Offset(0, 2))],
-              border: isLeader ? Border.all(color: const Color(0xFF3A6FD8), width: 1) : null,
-            ),
-            padding: const EdgeInsets.all(16),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                Expanded(
-                  child: group.topic != null
-                      ? Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(group.topic!.topicName, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600, color: Color(0xFF1C293F))),
-                            const SizedBox(height: 8),
-                            Text(group.topic!.description, style: const TextStyle(fontSize: 13, color: Color(0xFF6B7280)), maxLines: 2, overflow: TextOverflow.ellipsis),
-                          ],
-                        )
-                      : Text(_translate('Chưa chọn chủ đề', 'No topic selected'), style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600, color: Color(0xFF9CA3AF))),
-                ),
-                const SizedBox(width: 12),
-                isLeader
-                    ? Icon(FeatherIcons.chevronRight, color: const Color(0xFF3A6FD8), size: 24)
-                    : Icon(FeatherIcons.lock, color: const Color(0xFF9CA3AF), size: 20),
-              ],
-            ),
+    return Container(
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: const Color(0xFFE2E4E9)),
+        boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.04), blurRadius: 4, offset: const Offset(0, 1))],
+      ),
+      padding: const EdgeInsets.all(16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(FeatherIcons.book, size: 18, color: const Color(0xFF3B5FE5)),
+              const SizedBox(width: 8),
+              Text(_translate('Chủ đề dự án', 'Project Topic'), style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600, color: Color(0xFF212631))),
+            ],
           ),
-        ),
-      ],
+          const SizedBox(height: 12),
+          if (isLeader)
+            Material(
+              color: Colors.transparent,
+              child: InkWell(
+                onTap: onSelectTopic,
+                borderRadius: BorderRadius.circular(12),
+                child: Container(
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF3B5FE5).withOpacity(0.08),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: const Color(0xFF3B5FE5).withOpacity(0.3), width: 1.5),
+                  ),
+                  padding: const EdgeInsets.all(12),
+                  child: Row(
+                    children: [
+                      Expanded(child: _buildTopicContent()),
+                      const SizedBox(width: 12),
+                      Icon(FeatherIcons.chevronRight, color: const Color(0xFF3B5FE5), size: 24),
+                    ],
+                  ),
+                ),
+              ),
+            )
+          else
+            _buildTopicContent(),
+        ],
+      ),
     );
   }
 
-  void _showTopicSnackbar(BuildContext context) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(_translate('Chuyển sang danh sách chủ đề', 'Navigate to topic list'))),
-    );
+  Widget _buildTopicContent() {
+    return group.topic != null
+        ? Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(group.topic!.topicName, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600, color: Color(0xFF212631))),
+              const SizedBox(height: 8),
+              Text(group.topic!.description, style: const TextStyle(fontSize: 13, color: Color(0xFF747A8A)), maxLines: 2, overflow: TextOverflow.ellipsis),
+            ],
+          )
+        : Container(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+            decoration: BoxDecoration(
+              color: Colors.transparent,
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    _translate('Chưa chọn chủ đề', 'No topic selected'),
+                    style: const TextStyle(
+                      fontSize: 14,
+                      color: Color(0xFF747A8A),
+                      fontStyle: FontStyle.italic,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          );
   }
 }
 
@@ -494,41 +622,51 @@ class _TechnologiesSection extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(_translate('Công nghệ sử dụng', 'Technologies'), style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600, color: Color(0xFF1C293F))),
-        const SizedBox(height: 12),
-        group.skills.isNotEmpty
-            ? Wrap(spacing: 8, runSpacing: 8, children: group.skills.map((skill) => SkillTag(skill: skill)).toList())
-            : Container(
-                width: double.infinity,
-                padding: const EdgeInsets.all(16),
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                  borderRadius: BorderRadius.circular(12),
-                  boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.08), blurRadius: 8, offset: const Offset(0, 2))],
-                ),
-                child: Text(_translate('Chưa có công nghệ nào', 'No technologies selected'), style: const TextStyle(fontSize: 14, color: Color(0xFF6B7280))),
-              ),
-      ],
+    return Container(
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: const Color(0xFFE2E4E9)),
+        boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.04), blurRadius: 4, offset: const Offset(0, 1))],
+      ),
+      padding: const EdgeInsets.all(16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(FeatherIcons.zap, size: 18, color: const Color(0xFF3B5FE5)),
+              const SizedBox(width: 8),
+              Text(_translate('Công nghệ sử dụng', 'Technologies'), style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600, color: Color(0xFF212631))),
+            ],
+          ),
+          const SizedBox(height: 12),
+          group.skills.isNotEmpty
+              ? Wrap(spacing: 8, runSpacing: 8, children: group.skills.map((skill) => SkillTag(skill: skill)).toList())
+              : Text(_translate('Chưa có công nghệ nào', 'No technologies selected'), style: const TextStyle(fontSize: 14, color: Color(0xFF747A8A))),
+        ],
+      ),
     );
   }
 }
 
 // ============ TEAM MEMBERS SECTION ============
 class _TeamMembersSection extends StatelessWidget {
+  final BuildContext parentContext;
   final Group group;
   final List<GroupMember> members;
   final bool isLeader;
   final AppLanguage language;
+  final AuthSession session;
   final VoidCallback onInvite;
 
   const _TeamMembersSection({
+    required this.parentContext,
     required this.group,
     required this.members,
     required this.isLeader,
     required this.language,
+    required this.session,
     required this.onInvite,
   });
 
@@ -536,87 +674,130 @@ class _TeamMembersSection extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Row(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-          children: [
-            Text(_translate('Thành viên nhóm', 'Team Members'), style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600, color: Color(0xFF1C293F))),
-            Text('${members.length} ${_translate('người', 'members')}', style: const TextStyle(fontSize: 14, color: Color(0xFF6B7280), fontWeight: FontWeight.w500)),
-          ],
-        ),
-        const SizedBox(height: 12),
-        ...members.map((member) => _buildMemberCard(member)),
-        if (isLeader) ...[
+    return Container(
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: const Color(0xFFE2E4E9)),
+        boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.04), blurRadius: 4, offset: const Offset(0, 1))],
+      ),
+      padding: const EdgeInsets.all(16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(FeatherIcons.users, size: 18, color: const Color(0xFF3B5FE5)),
+              const SizedBox(width: 8),
+              Text(_translate('Thành viên nhóm', 'Team Members'), style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600, color: Color(0xFF212631))),
+              const Spacer(),
+              Text('${members.length} ${_translate('người', 'members')}', style: const TextStyle(fontSize: 14, color: Color(0xFF747A8A), fontWeight: FontWeight.w500)),
+            ],
+          ),
           const SizedBox(height: 12),
-          SizedBox(
-            width: double.infinity,
-            child: ElevatedButton(
-              onPressed: onInvite,
-              style: ElevatedButton.styleFrom(
-                backgroundColor: const Color(0xFF3A6FD8),
-                foregroundColor: Colors.white,
-                padding: const EdgeInsets.symmetric(vertical: 12),
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-              ),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  const Icon(FeatherIcons.userPlus, size: 18),
-                  const SizedBox(width: 8),
-                  Text(_translate('Mời thành viên', 'Invite Members'), style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600)),
-                ],
-              ),
-            ),
+          Column(
+            children: [
+              ...members.map((member) => _buildMemberCard(member, parentContext)),
+              if (isLeader) ...[const SizedBox(height: 12), _buildInviteButton()],
+            ],
           ),
         ],
-      ],
+      ),
     );
   }
 
-  Widget _buildMemberCard(GroupMember member) {
+  Widget _buildInviteButton() {
+    return SizedBox(
+      width: double.infinity,
+      child: ElevatedButton(
+        onPressed: onInvite,
+        style: ElevatedButton.styleFrom(
+          backgroundColor: const Color(0xFF3B5FE5),
+          foregroundColor: Colors.white,
+          padding: const EdgeInsets.symmetric(vertical: 12),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        ),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            const Icon(FeatherIcons.userPlus, size: 18),
+            const SizedBox(width: 8),
+            Text(_translate('Mời thành viên', 'Invite Members'), style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600)),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildMemberCard(GroupMember member, BuildContext context) {
     final displayName = member.displayName;
     final role = member.role;
     final hasRole = role.trim().isNotEmpty;
     final avatarUrl = member.avatarUrl;
+    final isCurrentUserLeader = isLeader;
+    final isMemberLeader = role == 'leader';
+    // Chỉ cho kick khi: là leader, member không phải leader, và group chưa active
+    final canKick = isCurrentUserLeader && !isMemberLeader && group.status != 'active';
 
     return Padding(
       padding: const EdgeInsets.only(bottom: 12),
-      child: Container(
-        decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(12),
-          boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.08), blurRadius: 8, offset: const Offset(0, 2))],
-        ),
-        padding: const EdgeInsets.all(12),
-        child: Row(
-          children: [
-            _buildAvatar(displayName, avatarUrl),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(displayName, style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: Color(0xFF1C293F))),
-                  const SizedBox(height: 4),
-                  Text(
-                    _formatRole(hasRole ? role : null),
-                    style: const TextStyle(fontSize: 12, color: Color(0xFF6B7280)),
-                  ),
-                ],
-              ),
-            ),
-            if (hasRole)
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                decoration: BoxDecoration(
-                  color: _getRoleColor(role).withOpacity(0.1),
-                  borderRadius: BorderRadius.circular(6),
+      child: GestureDetector(
+        onTap: () => _openUserProfile(context, member.userId),
+        child: Container(
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: const Color(0xFFE2E4E9)),
+            boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.04), blurRadius: 4, offset: const Offset(0, 1))],
+          ),
+          padding: const EdgeInsets.all(12),
+          child: Row(
+            children: [
+              _buildAvatar(displayName, avatarUrl),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(displayName, style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: Color(0xFF212631))),
+                    const SizedBox(height: 4),
+                    Text(
+                      _formatRole(hasRole ? role : null),
+                      style: const TextStyle(fontSize: 12, color: Color(0xFF747A8A)),
+                    ),
+                  ],
                 ),
-                child: Text(_formatRole(role), style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: _getRoleColor(role))),
               ),
-          ],
+              if (hasRole)
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: _getRoleColor(role).withOpacity(0.1),
+                    borderRadius: BorderRadius.circular(6),
+                  ),
+                  child: Text(_formatRole(role), style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: _getRoleColor(role))),
+                ),
+              if (canKick) ...[
+                const SizedBox(width: 8),
+                IconButton(
+                  icon: const Icon(FeatherIcons.userMinus, size: 18, color: Color(0xFFEF4444)),
+                  onPressed: () => _showKickConfirmation(context, member),
+                  padding: EdgeInsets.zero,
+                  constraints: const BoxConstraints(),
+                ),
+              ],
+              if (isCurrentUserLeader && !isMemberLeader) ...[
+                const SizedBox(width: 4),
+                IconButton(
+                  icon: const Icon(FeatherIcons.star, size: 18, color: Color(0xFFF59E0B)),
+                  onPressed: () => _showTransferLeaderConfirmation(context, member),
+                  padding: EdgeInsets.zero,
+                  constraints: const BoxConstraints(),
+                  tooltip: _translate('Chuyển quyền leader', 'Transfer leadership'),
+                ),
+              ],
+            ],
+          ),
         ),
       ),
     );
@@ -628,11 +809,205 @@ class _TeamMembersSection extends StatelessWidget {
       height: 48,
       decoration: BoxDecoration(
         shape: BoxShape.circle,
-        color: const Color(0xFF3A6FD8),
+        color: const Color(0xFF3B5FE5),
         image: url != null ? DecorationImage(image: NetworkImage(url), fit: BoxFit.cover) : null,
       ),
       child: url == null ? Center(child: Text(name.isEmpty ? '?' : name[0], style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w600))) : null,
     );
+  }
+
+  void _showKickConfirmation(BuildContext context, GroupMember member) {
+    showDialog(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: Text(_translate('Xác nhận', 'Confirm')),
+        content: Text(
+          _translate(
+            'Bạn có chắc chắn muốn xóa ${member.displayName} khỏi nhóm?',
+            'Are you sure you want to remove ${member.displayName} from the group?',
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(),
+            child: Text(_translate('Hủy', 'Cancel')),
+          ),
+          TextButton(
+            onPressed: () {
+              Navigator.of(dialogContext).pop();
+              _kickMember(context, member);
+            },
+            style: TextButton.styleFrom(foregroundColor: const Color(0xFFEF4444)),
+            child: Text(_translate('Xóa', 'Remove')),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _showTransferLeaderConfirmation(BuildContext context, GroupMember member) {
+    showDialog(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: Text(_translate('Chuyển quyền leader', 'Transfer Leadership')),
+        content: Text(
+          _translate(
+            'Bạn có chắc chắn muốn chuyển quyền leader cho ${member.displayName}?\n\nBạn sẽ trở thành thành viên thường sau khi chuyển.',
+            'Are you sure you want to transfer leadership to ${member.displayName}?\n\nYou will become a regular member after the transfer.',
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(),
+            child: Text(_translate('Hủy', 'Cancel')),
+          ),
+          TextButton(
+            onPressed: () {
+              Navigator.of(dialogContext).pop();
+              _transferLeader(context, member);
+            },
+            style: TextButton.styleFrom(foregroundColor: const Color(0xFFF59E0B)),
+            child: Text(_translate('Chuyển', 'Transfer')),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _kickMember(BuildContext context, GroupMember member) async {
+    print('[GROUP] Attempting to kick member: ${member.displayName} (${member.userId})');
+    print('[GROUP] Current group status: ${group.status}');
+    print('[GROUP] Current user role: ${group.role}');
+    print('[GROUP] Is leader: $isLeader');
+    
+    try {
+      final dataSource = GroupRemoteDataSource(baseUrl: kApiBaseUrl);
+      await dataSource.kickMember(
+        accessToken: session.accessToken,
+        groupId: group.id,
+        userId: member.userId,
+      );
+
+      print('[GROUP] Successfully kicked member');
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            _translate(
+              'Đã xóa ${member.displayName} khỏi nhóm',
+              '${member.displayName} has been removed from the group',
+            ),
+          ),
+          backgroundColor: const Color(0xFF10B981),
+        ),
+      );
+
+      // Reload page
+      if (parentContext.mounted) {
+        Navigator.of(parentContext).pushReplacement(
+          MaterialPageRoute(
+            builder: (_) => GroupDetailPage(
+              groupId: group.id,
+              session: session,
+              language: language,
+            ),
+          ),
+        );
+      }
+    } catch (e) {
+      print('[GROUP] ERROR kicking member: $e');
+      print('[GROUP] Error type: ${e.runtimeType}');
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            _translate(
+              'Không thể xóa thành viên: $e',
+              'Failed to remove member: $e',
+            ),
+          ),
+          backgroundColor: const Color(0xFFEF4444),
+        ),
+      );
+    }
+  }
+
+  Future<void> _transferLeader(BuildContext context, GroupMember member) async {
+    print('[GROUP] Attempting to transfer leader to: ${member.displayName} (${member.userId})');
+    
+    try {
+      final dataSource = GroupRemoteDataSource(baseUrl: kApiBaseUrl);
+      await dataSource.transferLeader(
+        accessToken: session.accessToken,
+        groupId: group.id,
+        newLeaderUserId: member.userId,
+      );
+
+      print('[GROUP] Successfully transferred leadership');
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            _translate(
+              'Đã chuyển quyền leader cho ${member.displayName}',
+              'Leadership transferred to ${member.displayName}',
+            ),
+          ),
+          backgroundColor: const Color(0xFF10B981),
+        ),
+      );
+
+      // Reload page
+      if (parentContext.mounted) {
+        Navigator.of(parentContext).pushReplacement(
+          MaterialPageRoute(
+            builder: (_) => GroupDetailPage(
+              groupId: group.id,
+              session: session,
+              language: language,
+            ),
+          ),
+        );
+      }
+    } catch (e) {
+      print('[GROUP] ERROR transferring leader: $e');
+      print('[GROUP] Error type: ${e.runtimeType}');
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            _translate(
+              'Không thể chuyển quyền leader: $e',
+              'Failed to transfer leadership: $e',
+            ),
+          ),
+          backgroundColor: const Color(0xFFEF4444),
+        ),
+      );
+    }
+  }
+
+  void _openUserProfile(BuildContext context, String userId) {
+    try {
+      print('[GROUP DETAIL] Opening user profile for userId: $userId');
+      Navigator.of(context).push(
+        MaterialPageRoute(
+          builder: (context) => UserProfilePage(
+            userId: userId,
+            session: session,
+            language: language,
+          ),
+        ),
+      );
+    } catch (e) {
+      print('[GROUP DETAIL] Error opening user profile: $e');
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Lỗi: $e'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
   }
 
   String _formatRole(String? role) {
@@ -644,9 +1019,9 @@ class _TeamMembersSection extends StatelessWidget {
 
   Color _getRoleColor(String role) {
     if (role == 'leader') return const Color(0xFFEF4444);
-    if (role == 'member') return const Color(0xFF3A6FD8);
+    if (role == 'member') return const Color(0xFF3B5FE5);
     if (role == 'mentor') return const Color(0xFF8B5CF6);
-    return const Color(0xFF6B7280);
+    return const Color(0xFF747A8A);
   }
 }
 
@@ -801,5 +1176,479 @@ class _InviteMembersDialogState extends State<_InviteMembersDialog> {
         TextButton(onPressed: () => Navigator.pop(context), child: Text(_translate('Đóng', 'Close'))),
       ],
     );
+  }
+}
+
+// ============ EDIT GROUP DIALOG ============
+class _EditGroupDialog extends StatefulWidget {
+  final Group group;
+  final AuthSession session;
+  final AppLanguage language;
+  final VoidCallback onGroupUpdated;
+
+  const _EditGroupDialog({
+    required this.group,
+    required this.session,
+    required this.language,
+    required this.onGroupUpdated,
+  });
+
+  @override
+  State<_EditGroupDialog> createState() => _EditGroupDialogState();
+}
+
+class _EditGroupDialogState extends State<_EditGroupDialog> {
+  late TextEditingController _nameController;
+  late TextEditingController _descriptionController;
+  late TextEditingController _maxMembersController;
+  late GroupRemoteDataSource _dataSource;
+
+  List<Map<String, dynamic>> _allSkills = [];
+  List<Map<String, dynamic>> _selectedSkills = [];
+  List<Map<String, dynamic>> _availableSkills = [];
+  bool _loading = true;
+  bool _saving = false;
+  String _selectedCategory = 'all'; // Track selected category for filtering
+
+  @override
+  void initState() {
+    super.initState();
+    _nameController = TextEditingController(text: widget.group.name);
+    _descriptionController = TextEditingController(text: widget.group.description);
+    _maxMembersController = TextEditingController(text: widget.group.maxMembers.toString());
+    _dataSource = GroupRemoteDataSource(baseUrl: kApiBaseUrl);
+
+    // Initialize selected skills from strings
+    _selectedSkills = widget.group.skills.map((skillToken) {
+      return {'token': skillToken, 'role': 'unknown', 'major': 'unknown'};
+    }).toList();
+
+    _loadSkills();
+  }
+
+  Future<void> _loadSkills() async {
+    try {
+      final response = await _dataSource.fetchAllSkills();
+      if (!mounted) return;
+
+      setState(() {
+        _allSkills = response;
+        _updateAvailableSkills();
+        _loading = false;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Error loading skills: $e')),
+      );
+      setState(() => _loading = false);
+    }
+  }
+
+  void _updateAvailableSkills() {
+    final selectedTokens = _selectedSkills
+        .map((s) => s['token'] as String?)
+        .whereType<String>()
+        .toSet();
+    
+    List<Map<String, dynamic>> filtered = _allSkills
+        .where((skill) => !selectedTokens.contains(skill['token'] as String?))
+        .toList();
+    
+    // Filter by selected category
+    if (_selectedCategory != 'all') {
+      filtered = filtered
+          .where((skill) => 
+              (skill['role']?.toString() ?? '').toLowerCase() == _selectedCategory.toLowerCase())
+          .toList();
+    }
+    
+    _availableSkills = filtered;
+  }
+
+  void _addSkill(Map<String, dynamic> skill) {
+    try {
+      setState(() {
+        final skillMap = {
+          'token': skill['token'].toString(),
+          'role': skill['role']?.toString() ?? 'unknown',
+          'major': skill['major']?.toString() ?? 'unknown',
+        };
+        _selectedSkills.add(skillMap);
+        _updateAvailableSkills();
+      });
+    } catch (e) {
+      debugPrint('Error adding skill: $e');
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Error adding skill: $e')),
+      );
+    }
+  }
+
+  void _removeSkill(String token) {
+    setState(() {
+      _selectedSkills.removeWhere((s) {
+        final t = s['token'];
+        return t.toString() == token;
+      });
+      _updateAvailableSkills();
+    });
+  }
+
+  String _translate(String vi, String en) => widget.language == AppLanguage.vi ? vi : en;
+
+  Color _getSkillColor(String? role) {
+    switch ((role ?? 'backend').toLowerCase()) {
+      case 'frontend':
+        return const Color(0xFF06B6D4); // Cyan
+      case 'backend':
+        return const Color(0xFF8B5CF6); // Purple
+      case 'mobile':
+        return const Color(0xFFEC4899); // Pink
+      case 'devops':
+        return const Color(0xFFEF4444); // Red
+      case 'qa':
+        return const Color(0xFFF59E0B); // Amber
+      default:
+        return const Color(0xFF6B7280); // Gray
+    }
+  }
+
+  Widget _buildCategoryButton(String label, String category) {
+    final isSelected = _selectedCategory == category;
+    return GestureDetector(
+      onTap: () {
+        setState(() {
+          _selectedCategory = category;
+          _updateAvailableSkills();
+        });
+      },
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+        decoration: BoxDecoration(
+          color: isSelected ? const Color(0xFF1F2937) : const Color(0xFFEEF2FF),
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(
+            color: isSelected ? const Color(0xFF374151) : const Color(0xFFE0E7FF),
+          ),
+        ),
+        child: Text(
+          label,
+          style: TextStyle(
+            fontSize: 12,
+            fontWeight: FontWeight.w500,
+            color: isSelected ? Colors.white : const Color(0xFF6366F1),
+          ),
+        ),
+      ),
+    );
+  }
+
+  @override
+  void dispose() {
+    _nameController.dispose();
+    _descriptionController.dispose();
+    _maxMembersController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Dialog(
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      child: SingleChildScrollView(
+        child: Padding(
+          padding: const EdgeInsets.all(24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // Header
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Text(
+                    _translate('CHỈNH SỬA NHÓM', 'EDIT GROUP'),
+                    style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: Color(0xFF3B5FE5), letterSpacing: 0.5),
+                  ),
+                  GestureDetector(
+                    onTap: () => Navigator.pop(context),
+                    child: const Icon(Icons.close, size: 24, color: Color(0xFF747A8A)),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 12),
+              Text(
+                _translate('Cập nhật chi tiết nhóm', 'Update group details'),
+                style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w700, color: Color(0xFF212631)),
+              ),
+              const SizedBox(height: 24),
+
+              // Group Name Field
+              Text(_translate('Tên nhóm', 'Group Name'), style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: Color(0xFF212631))),
+              const SizedBox(height: 8),
+              TextField(
+                controller: _nameController,
+                decoration: InputDecoration(
+                  hintText: _translate('Nhập tên nhóm', 'Enter group name'),
+                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                  contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                ),
+              ),
+              const SizedBox(height: 16),
+
+              // Description Field
+              Text(_translate('Mô tả', 'Description'), style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: Color(0xFF212631))),
+              const SizedBox(height: 8),
+              TextField(
+                controller: _descriptionController,
+                maxLines: 3,
+                decoration: InputDecoration(
+                  hintText: _translate('Nhập mô tả', 'Enter description'),
+                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                  contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                ),
+              ),
+              const SizedBox(height: 16),
+
+              // Max Members Field
+              Text(_translate('Số thành viên tối đa', 'Max Members'), style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: Color(0xFF212631))),
+              const SizedBox(height: 8),
+              TextField(
+                controller: _maxMembersController,
+                keyboardType: TextInputType.number,
+                decoration: InputDecoration(
+                  hintText: _translate('Nhập số thành viên', 'Enter max members'),
+                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                  contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                ),
+              ),
+              const SizedBox(height: 16),
+
+              // Tech Stack Section
+              Text(_translate('Công nghệ sử dụng', 'Tech Stack'), style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: Color(0xFF212631))),
+              const SizedBox(height: 12),
+
+              if (_loading)
+                const Padding(
+                  padding: EdgeInsets.symmetric(vertical: 16),
+                  child: Center(child: CircularProgressIndicator()),
+                )
+              else ...[
+                // Selected Skills Container - Fixed Width
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFFEF3C7).withOpacity(0.3),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: const Color(0xFFFCD34D)),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        _translate('Công nghệ đã chọn', 'Your Selected Skills') + ' (${_selectedSkills.length})',
+                        style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: Color(0xFF212631)),
+                      ),
+                      const SizedBox(height: 8),
+                      if (_selectedSkills.isEmpty)
+                        Text(
+                          _translate('Chưa chọn công nghệ', 'No skills selected'),
+                          style: const TextStyle(fontSize: 12, color: Color(0xFF9CA3AF)),
+                        )
+                      else
+                        Wrap(
+                          spacing: 6,
+                          runSpacing: 6,
+                          children: _selectedSkills.map((skill) {
+                            final token = skill['token']?.toString() ?? '';
+                            return Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                              decoration: BoxDecoration(
+                                color: Colors.white,
+                                borderRadius: BorderRadius.circular(16),
+                                border: Border.all(color: const Color(0xFFE2E4E9)),
+                              ),
+                              child: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Text(token, style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w500)),
+                                  const SizedBox(width: 4),
+                                  GestureDetector(
+                                    onTap: () => _removeSkill(token),
+                                    child: const Icon(Icons.close, size: 14, color: Color(0xFF747A8A)),
+                                  ),
+                                ],
+                              ),
+                            );
+                          }).toList(),
+                        ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 16),
+
+                // Category Filter Buttons
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: [
+                    _buildCategoryButton('All (${_allSkills.length})', 'all'),
+                    _buildCategoryButton('Frontend (${_allSkills.where((s) => (s['role'] ?? '').toString().toLowerCase() == 'frontend').length})', 'frontend'),
+                    _buildCategoryButton('Backend (${_allSkills.where((s) => (s['role'] ?? '').toString().toLowerCase() == 'backend').length})', 'backend'),
+                    _buildCategoryButton('Mobile (${_allSkills.where((s) => (s['role'] ?? '').toString().toLowerCase() == 'mobile').length})', 'mobile'),
+                    _buildCategoryButton('Devops (${_allSkills.where((s) => (s['role'] ?? '').toString().toLowerCase() == 'devops').length})', 'devops'),
+                    _buildCategoryButton('Qa (${_allSkills.where((s) => (s['role'] ?? '').toString().toLowerCase() == 'qa').length})', 'qa'),
+                  ],
+                ),
+                const SizedBox(height: 16),
+
+                // Available Skills Title
+                Text(
+                  _translate('Công nghệ có sẵn', 'Available Skills (Click to add)'),
+                  style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: Color(0xFF747A8A)),
+                ),
+                const SizedBox(height: 12),
+
+                // Available Skills Grid
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: _availableSkills.map((skill) {
+                    final token = skill['token']?.toString() ?? '';
+                    final role = skill['role']?.toString() ?? 'backend';
+                    final color = _getSkillColor(role);
+                    return GestureDetector(
+                      onTap: () => _addSkill(skill),
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                        decoration: BoxDecoration(
+                          color: color.withOpacity(0.1),
+                          borderRadius: BorderRadius.circular(16),
+                          border: Border.all(color: color.withOpacity(0.3)),
+                        ),
+                        child: RichText(
+                          text: TextSpan(
+                            children: [
+                              TextSpan(
+                                text: token,
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w500,
+                                  color: color,
+                                ),
+                              ),
+                              TextSpan(
+                                text: ' +',
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w600,
+                                  color: color,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    );
+                  }).toList(),
+                ),
+              ],
+              const SizedBox(height: 24),
+
+              // Buttons
+              Row(
+                mainAxisAlignment: MainAxisAlignment.end,
+                children: [
+                  Expanded(
+                    child: ElevatedButton(
+                      onPressed: _saving ? null : () => Navigator.pop(context),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: const Color(0xFFF5F6F8),
+                        foregroundColor: const Color(0xFF212631),
+                        padding: const EdgeInsets.symmetric(vertical: 12),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                      ),
+                      child: Text(_translate('Hủy', 'Cancel')),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: ElevatedButton(
+                      onPressed: _saving ? null : () => _saveChanges(),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: const Color(0xFF3B5FE5),
+                        foregroundColor: Colors.white,
+                        padding: const EdgeInsets.symmetric(vertical: 12),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                      ),
+                      child: _saving
+                          ? const SizedBox(
+                              height: 16,
+                              width: 16,
+                              child: CircularProgressIndicator(strokeWidth: 2, valueColor: AlwaysStoppedAnimation<Color>(Colors.white)),
+                            )
+                          : Text(_translate('Lưu thay đổi', 'Save changes')),
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Future<void> _saveChanges() async {
+    setState(() => _saving = true);
+    try {
+      final name = _nameController.text.trim();
+      final description = _descriptionController.text.trim();
+      final maxMembers = int.tryParse(_maxMembersController.text) ?? widget.group.maxMembers;
+      final skills = _selectedSkills
+          .map((s) => s['token']?.toString() ?? '')
+          .where((token) => token.isNotEmpty)
+          .toList();
+
+      // Validate inputs
+      if (name.isEmpty) {
+        throw Exception(_translate('Tên nhóm không được để trống', 'Group name cannot be empty'));
+      }
+
+      // Call API to update group
+      await _dataSource.updateGroup(
+        widget.session.accessToken,
+        widget.group.id,
+        {
+          'name': name,
+          'description': description,
+          'maxMembers': maxMembers,
+          'skills': skills,
+        },
+      );
+
+      if (!mounted) return;
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(_translate('Cập nhật thành công', 'Group updated successfully')),
+          backgroundColor: Colors.green,
+        ),
+      );
+      widget.onGroupUpdated();
+      Navigator.pop(context);
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _saving = false);
+      debugPrint('Save error: $e');
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(_translate('Lỗi: ', 'Error: ') + e.toString()),
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
   }
 }

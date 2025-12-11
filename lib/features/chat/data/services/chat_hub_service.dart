@@ -1,11 +1,8 @@
 import 'dart:async';
-
 import 'package:signalr_netcore/signalr_client.dart';
-
 import '../../../../core/constants/api_constants.dart';
 import '../../domain/entities/chat_message.dart';
 import '../models/chat_message_model.dart';
-
 class ChatHubService {
   ChatHubService({
     required this.baseUrl,
@@ -13,17 +10,15 @@ class ChatHubService {
     required this.currentUserId,
     this.hubPath = ApiPath.chatHub,
   });
-
   final String baseUrl;
   final String accessToken;
   final String currentUserId;
   final String hubPath;
-
   HubConnection? _connection;
   String? _joinedSessionId;
   String? _joinedGroupId;
   final Set<String> _groupMembersOnline = <String>{};
-
+  List<Map<String, dynamic>> _currentActiveUsers = [];
   final StreamController<ChatMessage> _messageController =
       StreamController.broadcast();
   final StreamController<bool> _presenceController =
@@ -31,11 +26,13 @@ class ChatHubService {
   final StreamController<bool> _typingController = StreamController.broadcast();
   final StreamController<Map<String, dynamic>> _globalPresenceController =
       StreamController.broadcast();
-
+  final StreamController<List<Map<String, dynamic>>> _activeUsersController =
+      StreamController.broadcast();
   Stream<ChatMessage> get messages => _messageController.stream;
   Stream<bool> get presence => _presenceController.stream;
   Stream<bool> get typing => _typingController.stream;
   Stream<Map<String, dynamic>> get globalPresence => _globalPresenceController.stream;
+  Stream<List<Map<String, dynamic>>> get activeUsers => _activeUsersController.stream;
 
   Future<void> _ensureConnection() async {
     if (_connection != null && 
@@ -75,13 +72,16 @@ class ChatHubService {
     connection.onreconnected(({connectionId}) {
       final sessionId = _joinedSessionId;
       if (sessionId != null) {
-        connection.invoke('JoinSession', args: <Object>[sessionId]).catchError((e) {});
+        connection.invoke('JoinSession', args: <Object>[sessionId]).catchError((e) {
+          return null;
+        });
       }
       final groupId = _joinedGroupId;
       if (groupId != null) {
-        connection.invoke('JoinGroup', args: <Object>[groupId]).catchError((e) {});
+        connection.invoke('JoinGroup', args: <Object>[groupId]).catchError((e) {
+          return null;
+        });
       }
-      
     });
 
     int retries = 0;
@@ -107,6 +107,7 @@ class ChatHubService {
 
   Future<void> joinSession(String sessionId) async {
     _joinedSessionId = sessionId;
+    _currentActiveUsers = []; 
     await _ensureConnection();
     if (_connection != null) {
       await _connection!.invoke('JoinSession', args: [sessionId]);
@@ -117,12 +118,15 @@ class ChatHubService {
     if (_connection == null) return;
     if (_joinedSessionId == sessionId) {
       _joinedSessionId = null;
+      _currentActiveUsers = []; 
+      _activeUsersController.add([]);
     }
     await _connection?.invoke('LeaveSession', args: [sessionId]);
   }
 
   Future<void> joinGroup(String groupId) async {
     _joinedGroupId = groupId;
+    _currentActiveUsers = []; 
     await _ensureConnection();
     if (_connection != null) {
       await _connection!.invoke('JoinGroup', args: [groupId]);
@@ -133,6 +137,8 @@ class ChatHubService {
     if (_connection == null) return;
     if (_joinedGroupId == groupId) {
       _joinedGroupId = null;
+      _currentActiveUsers = []; 
+      _activeUsersController.add([]);
     }
     await _connection?.invoke('LeaveGroup', args: [groupId]);
   }
@@ -144,6 +150,7 @@ class ChatHubService {
         await _connection!.invoke('TypingSession', args: [sessionId, isTyping]);
       }
     } catch (e) {
+     
     }
   }
 
@@ -154,6 +161,7 @@ class ChatHubService {
         await _connection!.invoke('Typing', args: [groupId, isTyping]);
       }
     } catch (e) {
+   
     }
   }
 
@@ -182,17 +190,27 @@ class ChatHubService {
     if (sessionId == null || sessionId != _joinedSessionId) return;
 
     final users = map['users'] as List?;
-    final hasOtherUserOnline =
-        users?.any((user) {
-          if (user is Map) {
-            final userId = user['userId']?.toString();
-            return userId != null && userId != currentUserId;
+    final activeUsers = <Map<String, dynamic>>[];
+    
+    var hasOtherUserOnline = false;
+    if (users != null) {
+      for (final user in users) {
+        if (user is Map) {
+          final userId = user['userId']?.toString();
+          final displayName = user['displayName']?.toString();
+          if (userId != null && userId != currentUserId) {
+            hasOtherUserOnline = true;
+            activeUsers.add({
+              'userId': userId,
+              'displayName': displayName ?? 'Unknown',
+            });
           }
-          return false;
-        }) ??
-        false;
+        }
+      }
+    }
 
     _presenceController.add(hasOtherUserOnline);
+    _activeUsersController.add(activeUsers);
   }
 
   void _onSessionPresenceChanged(List<Object?>? arguments) {
@@ -203,9 +221,24 @@ class ChatHubService {
     final map = Map<String, dynamic>.from(data);
     final sessionId = map['sessionId']?.toString() ?? _joinedSessionId;
     final userId = map['userId']?.toString();
+    final displayName = map['displayName']?.toString();
     final status = map['status']?.toString().toLowerCase();
 
-    if (sessionId == null || sessionId != _joinedSessionId || userId == currentUserId) return;
+    if (sessionId == null || sessionId != _joinedSessionId || userId == null) return;
+    if (userId == currentUserId) return;
+    if (status == 'joined') {
+      if (!_currentActiveUsers.any((u) => u['userId'] == userId)) {
+        _currentActiveUsers.add({
+          'userId': userId,
+          'displayName': displayName ?? 'Unknown',
+        });
+      }
+    } else if (status == 'left') {
+      _currentActiveUsers.removeWhere((u) => u['userId'] == userId);
+    }
+    
+    _activeUsersController.add(List.from(_currentActiveUsers));
+    
     final isOnline = status == 'joined' || status == 'online';
     _presenceController.add(isOnline);
   }
@@ -219,6 +252,7 @@ class ChatHubService {
     final groupId = map['groupId']?.toString() ?? _joinedGroupId;
     final status = map['status']?.toString().toLowerCase();
     final userId = map['userId']?.toString();
+    final displayName = map['displayName']?.toString();
 
     if (groupId == null || groupId != _joinedGroupId || userId == null) {
       return;
@@ -228,10 +262,18 @@ class ChatHubService {
 
     if (status == 'joined') {
       _groupMembersOnline.add(userId);
+      if (!_currentActiveUsers.any((u) => u['userId'] == userId)) {
+        _currentActiveUsers.add({
+          'userId': userId,
+          'displayName': displayName ?? 'Unknown',
+        });
+      }
     } else if (status == 'left') {
       _groupMembersOnline.remove(userId);
+      _currentActiveUsers.removeWhere((u) => u['userId'] == userId);
     }
-
+    _activeUsersController.add(List.from(_currentActiveUsers));
+    
     _presenceController.add(_groupMembersOnline.isNotEmpty);
   }
 
@@ -302,5 +344,6 @@ class ChatHubService {
     await _presenceController.close();
     await _typingController.close();
     await _globalPresenceController.close();
+    await _activeUsersController.close();
   }
 }

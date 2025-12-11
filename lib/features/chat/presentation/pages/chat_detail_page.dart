@@ -42,6 +42,7 @@ class _ChatDetailPageState extends State<ChatDetailPage> {
   final ScrollController _scrollController = ScrollController();
 
   List<ChatMessage> _messages = [];
+  List<Map<String, dynamic>> _activeUsers = [];
   bool _loading = true;
   bool _loadingMore = false;
   bool _hasMore = true;
@@ -53,6 +54,7 @@ class _ChatDetailPageState extends State<ChatDetailPage> {
   StreamSubscription<ChatMessage>? _messageSub;
   StreamSubscription<bool>? _presenceSub;
   StreamSubscription<bool>? _typingSub;
+  StreamSubscription<List<Map<String, dynamic>>>? _activeUsersSub;
   Timer? _typingTimer;
 
   @override
@@ -69,6 +71,7 @@ class _ChatDetailPageState extends State<ChatDetailPage> {
     _messageSub?.cancel();
     _presenceSub?.cancel();
     _typingSub?.cancel();
+    _activeUsersSub?.cancel();
     _typingTimer?.cancel();
 
     if (widget.conversation.isGroup &&
@@ -161,7 +164,25 @@ class _ChatDetailPageState extends State<ChatDetailPage> {
       _messageSub = _hubService.messages.listen(
         (message) {
           if (!mounted) return;
-          setState(() => _messages = [..._messages, message]);
+          setState(() {
+            // Check if this is a real message replacing an optimistic one
+            int optimisticIndex = -1;
+            for (int i = 0; i < _messages.length; i++) {
+              final m = _messages[i];
+              if (m.content == message.content && 
+                  m.senderId == message.senderId &&
+                  m.messageId.startsWith('temp_')) {
+                optimisticIndex = i;
+                break;
+              }
+            }
+            
+            if (optimisticIndex >= 0) {
+              _messages[optimisticIndex] = message;
+            } else {
+              _messages = [..._messages, message];
+            }
+          });
           _scrollToBottom();
         },
         onError: (error) {
@@ -183,6 +204,15 @@ class _ChatDetailPageState extends State<ChatDetailPage> {
         (typing) {
           if (!mounted) return;
           setState(() => _isTyping = typing);
+        },
+        onError: (error) {
+          // Silent fail
+        },
+      );
+
+      _activeUsersSub = _hubService.activeUsers.listen(
+        (users) {
+          // Active users received (can be used for future features)
         },
         onError: (error) {
           // Silent fail
@@ -215,11 +245,14 @@ class _ChatDetailPageState extends State<ChatDetailPage> {
     final text = _composerController.text.trim();
     if (text.isEmpty || _sending) return;
 
+    final tempId = 'temp_${DateTime.now().millisecondsSinceEpoch}';
+    final userId = widget.session.userId;
+    
     // Optimistic update - add message immediately to UI
     final optimisticMessage = ChatMessage(
-      messageId: 'temp_${DateTime.now().millisecondsSinceEpoch}',
+      messageId: tempId,
       sessionId: widget.conversation.sessionId,
-      senderId: widget.session.userId,
+      senderId: userId,
       senderName: widget.session.displayName ?? 'You',
       content: text,
       createdAt: DateTime.now(),
@@ -239,12 +272,13 @@ class _ChatDetailPageState extends State<ChatDetailPage> {
         sessionId: widget.conversation.sessionId,
         content: text,
       );
+      // Keep optimistic message - server will replace it via realtime with real ID
     } catch (e) {
       if (mounted) {
         _showError('Failed to send message: $e');
         setState(() {
           _messages = _messages
-              .where((m) => m.messageId != optimisticMessage.messageId)
+              .where((m) => m.messageId != tempId)
               .toList();
         });
       }
@@ -308,7 +342,6 @@ class _ChatDetailPageState extends State<ChatDetailPage> {
               onBack: () => Navigator.of(context).pop(),
               onLanguageChanged: (lang) => setState(() => _language = lang),
             ),
-            const SizedBox(height: 8),
             Expanded(
               child: _loading
                   ? const Center(
@@ -426,26 +459,6 @@ class _DetailHeader extends StatelessWidget {
                 ),
               ],
             ),
-          ),
-          IconButton(
-            icon: const Icon(Icons.search, color: Color(0xFF1B2B57)),
-            onPressed: () {},
-          ),
-          IconButton(
-            icon: const Icon(Icons.videocam_outlined, color: Color(0xFF1B2B57)),
-            onPressed: () {},
-          ),
-          PopupMenuButton<AppLanguage>(
-            onSelected: onLanguageChanged,
-            icon: const Icon(Icons.more_vert),
-            itemBuilder: (context) => AppLanguage.values
-                .map(
-                  (lang) => PopupMenuItem(
-                    value: lang,
-                    child: Text('${lang.displayName} ${lang.flag}'),
-                  ),
-                )
-                .toList(),
           ),
         ],
       ),
@@ -646,17 +659,6 @@ class _Composer extends StatelessWidget {
       ),
       child: Row(
         children: [
-          IconButton(
-            icon: const Icon(
-              Icons.add_circle_outline,
-              color: Color(0xFF24A148),
-            ),
-            onPressed: () {},
-          ),
-          IconButton(
-            icon: const Icon(Icons.image_outlined, color: Color(0xFF2563EB)),
-            onPressed: () {},
-          ),
           Expanded(
             child: Container(
               padding: const EdgeInsets.symmetric(horizontal: 12),
@@ -693,3 +695,6 @@ class _Composer extends StatelessWidget {
     );
   }
 }
+
+
+

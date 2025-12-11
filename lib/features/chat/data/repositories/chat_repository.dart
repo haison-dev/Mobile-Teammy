@@ -13,6 +13,16 @@ class ChatRepository {
     return remoteDataSource.fetchConversations(accessToken);
   }
 
+  Future<ChatConversation> createDirectConversation({
+    required String accessToken,
+    required String otherUserId,
+  }) {
+    return remoteDataSource.createDirectConversation(
+      accessToken: accessToken,
+      otherUserId: otherUserId,
+    );
+  }
+
   Future<List<ChatMessage>> fetchSessionMessages({
     required String accessToken,
     required String sessionId,
@@ -56,6 +66,16 @@ class ChatRepository {
       sessionId: sessionId,
       content: content,
       type: type,
+    );
+  }
+
+  Future<List<Map<String, dynamic>>> fetchGroupMembers({
+    required String accessToken,
+    required String groupId,
+  }) {
+    return remoteDataSource.fetchGroupMembers(
+      accessToken: accessToken,
+      groupId: groupId,
     );
   }
 }
