@@ -169,7 +169,10 @@ class _MainPageState extends State<MainPage> {
           language: _language,
         );
       case 1:
-        return TasksPage(language: _language);
+        return TasksPage(
+          language: _language,
+          session: widget.session,
+        );
       case 2:
         return ForumPage(language: _language);
       default:
