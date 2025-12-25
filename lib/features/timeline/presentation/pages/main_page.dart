@@ -19,6 +19,7 @@ import '../../../group/data/datasources/invitation_remote_data_source.dart';
 import '../../../group/data/repositories/invitation_repository.dart';
 import '../../../onboarding/presentation/pages/onboarding_page.dart';
 import 'account_settings_page.dart';
+
 class MainPage extends StatefulWidget {
   const MainPage({
     super.key,
@@ -395,14 +396,11 @@ class _MainPageState extends State<MainPage> {
                                 : FontWeight.w400,
                             color: color,
                           ),
-                        ),
-                      ],
+                        );
+                      }),
                     ),
-                  );
-                }),
-              ),
-            ),
-          ),
+                  ),
+                ),
         ),
       ),
     );
