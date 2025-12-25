@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../../../core/constants/api_constants.dart';
 import '../../../../core/localization/app_language.dart';
+import '../../../../core/services/notification_service.dart';
 import '../../../auth/data/datasources/auth_remote_data_source.dart';
 import '../../../auth/data/datasources/user_remote_data_source.dart';
 import '../../../auth/data/repositories/auth_repository.dart';
@@ -12,8 +13,10 @@ import '../../../chat/presentation/pages/chat_page.dart';
 import '../../../forum/presentation/pages/forum_page.dart';
 import '../../../tasks/presentation/pages/tasks_page.dart';
 import '../../../group/presentation/pages/group_page.dart';
-import '../../../group/presentation/pages/notifications_page.dart';
-import '../../../group/data/datasources/group_remote_data_source.dart';
+import '../../../group/presentation/pages/group_invitations_page.dart';
+import '../../../group/data/services/group_invitation_service.dart';
+import '../../../group/data/datasources/invitation_remote_data_source.dart';
+import '../../../group/data/repositories/invitation_repository.dart';
 import '../../../onboarding/presentation/pages/onboarding_page.dart';
 import 'account_settings_page.dart';
 
@@ -35,13 +38,14 @@ class _MainPageState extends State<MainPage> {
   int _selectedIndex = 0;
   late final UserRepository _userRepository;
   late final AuthRepository _authRepository;
+  late final GroupInvitationService _invitationService;
   UserProfile? _profile;
   bool _profileLoading = true;
   bool _profileFailed = false;
   late AppLanguage _language;
   double? _dragStartX;
   bool _isUserSheetOpen = false;
-  int _invitationCount = 0;
+  int _pendingInvitationsCount = 0;
 
   final _tabs = const [
     _BottomTab(
@@ -78,6 +82,11 @@ class _MainPageState extends State<MainPage> {
     _authRepository = AuthRepository(
       remoteDataSource: AuthRemoteDataSource(baseUrl: kApiBaseUrl),
     );
+    _invitationService = GroupInvitationService(
+      baseUrl: kApiBaseUrl,
+      accessToken: widget.session.accessToken,
+      currentUserId: widget.session.userId,
+    );
     _sheetItems = [
       _SheetItemData(
         icon: Icons.manage_accounts_outlined,
@@ -87,27 +96,65 @@ class _MainPageState extends State<MainPage> {
       ),
     ];
     _loadProfile();
-    _loadInvitationCount();
+    _setupInvitationListener();
+    _loadPendingInvitationsCount();
   }
 
-  Future<void> _loadInvitationCount() async {
+  Future<void> _loadPendingInvitationsCount() async {
     try {
-      final dataSource = GroupRemoteDataSource(baseUrl: kApiBaseUrl);
-      
-      final profileInvitations = await dataSource.fetchProfilePostInvitations(
-        widget.session.accessToken,
+      final repository = InvitationRepository(
+        remoteDataSource: InvitationRemoteDataSource(
+          baseUrl: kApiBaseUrl,
+          accessToken: widget.session.accessToken,
+        ),
       );
-      
-      final memberInvitations = await dataSource.fetchMemberInvitations(
-        widget.session.accessToken,
-      );
-      
-      if (!mounted) return;
-      setState(() {
-        _invitationCount = profileInvitations.length + memberInvitations.length;
+      final invitations = await repository.getPendingInvitations();
+      if (mounted) {
+        setState(() {
+          _pendingInvitationsCount = invitations.length;
+        });
+      }
+    } catch (e) {
+      debugPrint('Error loading pending invitations count: $e');
+    }
+  }
+
+  void _setupInvitationListener() {
+    _invitationService.connect().then((_) {
+      _invitationService.invitations.listen((invitation) {
+        if (mounted) {
+          setState(() {
+            _pendingInvitationsCount++;
+          });
+          _showGroupInvitationNotification(invitation);
+        }
+      }, onError: (error) {
+        // Error in invitation stream
       });
-    } catch (_) {
-      // Silently fail for invitation count
+    }).catchError((error) {
+      // Failed to connect GroupInvitationService
+    });
+  }
+
+  void _showGroupInvitationNotification(GroupInvitation invitation) {
+    final groupName = invitation.groupName ?? 'Nhóm';
+    final typeLabel = _getInvitationTypeLabel(invitation.type);
+    
+    NotificationService().showGroupInvitationNotification(
+      groupName: groupName,
+      invitationType: invitation.type,
+    );
+  }
+
+  String _getInvitationTypeLabel(String type) {
+    switch (type) {
+      case 'mentor':
+        return 'Cố vấn';
+      case 'mentor_request':
+        return 'Yêu cầu cố vấn';
+      case 'member':
+      default:
+        return 'Thành viên';
     }
   }
 
@@ -128,6 +175,42 @@ class _MainPageState extends State<MainPage> {
         _profileFailed = true;
         _profileLoading = false;
       });
+    }
+  }
+
+  void _showGroupInvitationsModal() {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (context) => GroupInvitationsPage(
+        invitationService: _invitationService,
+        accessToken: widget.session.accessToken,
+      ),
+    ).then((_) {
+      // Refresh badge count after modal closes
+      _refreshInvitationCount();
+    });
+  }
+
+  Future<void> _refreshInvitationCount() async {
+    try {
+      final repository = InvitationRepository(
+        remoteDataSource: InvitationRemoteDataSource(
+          baseUrl: kApiBaseUrl,
+          accessToken: widget.session.accessToken,
+        ),
+      );
+      final invitations = await repository.getPendingInvitations();
+      if (mounted) {
+        setState(() {
+          _pendingInvitationsCount = invitations.length;
+        });
+      }
+    } catch (e) {
+      debugPrint('Error refreshing invitation count: $e');
     }
   }
 
@@ -249,20 +332,9 @@ class _MainPageState extends State<MainPage> {
                   profile: _profile,
                   isLoading: _profileLoading,
                   onAvatarTap: _openUserSheet,
+                  onNotificationTap: _showGroupInvitationsModal,
                   title: _getTabTitle(),
-                  invitationCount: _invitationCount,
-                  onNotificationTap: () async {
-                    await Navigator.of(context).push(
-                      MaterialPageRoute(
-                        builder: (_) => NotificationsPage(
-                          session: widget.session,
-                          language: _language,
-                        ),
-                      ),
-                    );
-                    // Reload invitation count after returning
-                    _loadInvitationCount();
-                  },
+                  pendingInvitationsCount: _pendingInvitationsCount,
                 ),
                 if (_profileFailed)
                   Padding(
@@ -282,43 +354,47 @@ class _MainPageState extends State<MainPage> {
           bottomNavigationBar: _selectedIndex == 3
               ? null
               : SafeArea(
-                  top: false,
-                  child: Container(
-                    decoration: const BoxDecoration(
-                      color: Colors.white,
-                      border: Border(top: BorderSide(color: Color(0xFFE3E5E9))),
-                    ),
-                    padding: const EdgeInsets.only(top: 6, bottom: 8),
-                    child: Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceAround,
-                      children: List.generate(_tabs.length, (index) {
-                        final tab = _tabs[index];
-                        final isActive = index == _selectedIndex;
-                        final color = isActive
-                            ? const Color.fromARGB(255, 65, 157, 173)
-                            : const Color(0xFF9CA3AF);
-                        final label = _language == AppLanguage.vi
-                            ? tab.labelVi
-                            : tab.labelEn;
-                        return GestureDetector(
-                          onTap: () => setState(() => _selectedIndex = index),
-                          behavior: HitTestBehavior.opaque,
-                          child: Column(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Icon(tab.icon, size: 25, color: color),
-                              const SizedBox(height: 4),
-                              Text(
-                                label,
-                                style: TextStyle(
-                                  fontSize: 12,
-                                  fontWeight: isActive
-                                      ? FontWeight.w600
-                                      : FontWeight.w400,
-                                  color: color,
-                                ),
-                              ),
-                            ],
+            top: false,
+            child: Container(
+              decoration: const BoxDecoration(
+                color: Colors.white,
+                border: Border(top: BorderSide(color: Color(0xFFE3E5E9))),
+              ),
+              padding: const EdgeInsets.only(top: 6, bottom: 8),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceAround,
+                children: List.generate(_tabs.length, (index) {
+                  final tab = _tabs[index];
+                  final isActive = index == _selectedIndex;
+                  final color = isActive
+                      ? const Color.fromARGB(255, 65, 157, 173)
+                      : const Color(0xFF9CA3AF);
+                  final label = _language == AppLanguage.vi
+                      ? tab.labelVi
+                      : tab.labelEn;
+                  return GestureDetector(
+                    onTap: () {
+                      // If clicking on Nhóm tab (index 0) with pending invitations, show invitations page
+                      if (index == 0 && _pendingInvitationsCount > 0) {
+                        _showGroupInvitationsModal();
+                      } else {
+                        setState(() => _selectedIndex = index);
+                      }
+                    },
+                    behavior: HitTestBehavior.opaque,
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(tab.icon, size: 25, color: color),
+                        const SizedBox(height: 4),
+                        Text(
+                          label,
+                          style: TextStyle(
+                            fontSize: 12,
+                            fontWeight: isActive
+                                ? FontWeight.w600
+                                : FontWeight.w400,
+                            color: color,
                           ),
                         );
                       }),
@@ -336,17 +412,17 @@ class _AppBar extends StatelessWidget {
     required this.profile,
     required this.isLoading,
     required this.onAvatarTap,
-    required this.title,
-    required this.invitationCount,
     required this.onNotificationTap,
+    required this.title,
+    required this.pendingInvitationsCount,
   });
 
   final UserProfile? profile;
   final bool isLoading;
   final VoidCallback onAvatarTap;
-  final String title;
-  final int invitationCount;
   final VoidCallback onNotificationTap;
+  final String title;
+  final int pendingInvitationsCount;
 
   @override
   Widget build(BuildContext context) {
@@ -396,37 +472,37 @@ class _AppBar extends StatelessWidget {
             GestureDetector(
               onTap: onNotificationTap,
               child: Stack(
+                clipBehavior: Clip.none,
                 children: [
-                  const Icon(
+                  Icon(
                     Icons.notifications_none_rounded,
-                    color: Color(0xFF39476A),
+                    color: const Color(0xFF39476A),
                     size: 28,
                   ),
-                  if (invitationCount > 0)
+                  if (pendingInvitationsCount > 0)
                     Positioned(
-                      right: 0,
-                      top: 0,
+                      right: -8,
+                      top: -8,
                       child: Container(
                         padding: const EdgeInsets.all(4),
-                        decoration: BoxDecoration(
-                          color: const Color(0xFFEF4444),
+                        decoration: const BoxDecoration(
+                          color: Color(0xFFEF4444),
                           shape: BoxShape.circle,
-                          border: Border.all(color: Colors.white, width: 2),
                         ),
                         constraints: const BoxConstraints(
-                          minWidth: 18,
-                          minHeight: 18,
+                          minWidth: 22,
+                          minHeight: 22,
                         ),
-                        child: Center(
-                          child: Text(
-                            invitationCount > 9 ? '9+' : '$invitationCount',
-                            style: const TextStyle(
-                              color: Colors.white,
-                              fontSize: 10,
-                              fontWeight: FontWeight.bold,
-                              height: 1,
-                            ),
+                        child: Text(
+                          pendingInvitationsCount > 99
+                              ? '99+'
+                              : pendingInvitationsCount.toString(),
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 12,
+                            fontWeight: FontWeight.bold,
                           ),
+                          textAlign: TextAlign.center,
                         ),
                       ),
                     ),
